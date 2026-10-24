@@ -1,0 +1,268 @@
+﻿\documentclass[10pt,twocolumn]{article}
+\usepackage[margin=0.72in]{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\newcommand{\inplacefigure}[4]{
+\begin{center}
+\refstepcounter{figure}\label{#1}
+\includegraphics[width=#2]{#3}
+\parbox{#2}{\small \textbf{Figure \thefigure.} #4}
+\end{center}
+}
+
+\title{Frequency-Representation Fusion for Interpretable AI-Generated Artwork Detection}
+\author{Crizepvill F. Dumalaog\\
+2025-21406\\
+Master of Engineering in Artificial Intelligence\\
+CS 282 - Computer Vision}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Synthetic image detection is often demonstrated on controlled benchmark images, yet visual culture now circulates through larger, heterogeneous artwork images collected from web, portfolio, and social contexts. This study proposes an artwork-domain frequency-representation fusion approach for distinguishing AI-generated artworks from real artworks under a validation-based evaluation protocol. The theoretical basis comes from three frequency-forensic studies: Frank et al. show that frequency representations can be used as classifier and CNN input for deepfake recognition \cite{frank}; Corvi et al. show that diffusion-generated images can exhibit residual and Fourier-domain fingerprints \cite{corvi}; and Durall et al. show that generated images may fail to reproduce natural spectral distributions \cite{durall}. To avoid test-set tuning, the experiment separates model fitting, threshold/fusion-weight selection, and final evaluation. From 973 local artwork images, 621 images are used for fitting, 108 images for validation selection, and 244 images for final testing. The matched late-fusion comparison holds the ConvNeXt-Tiny visual embedding, final classifier families, threshold-selection rule, and test set constant. Visual-only weighted fusion obtains 87.30\% test accuracy, while visual-plus-frequency weighted fusion obtains 88.93\% test accuracy, 89.13\% precision, 91.11\% recall, 90.11\% F1, and 93.43\% ROC-AUC using validation-selected weights and threshold. A secondary direct-CNN experiment tests Frank et al.'s frequency-input premise using RGB, DCT, and RGB+DCT CNN variants trained from scratch. The findings support a narrow claim: Fourier/DCT/residual evidence improves the matched visual baseline in this single fit-validation-test split, but broader publication claims require repeated splits, confidence intervals, and external-generator evaluation.
+\end{abstract}
+
+\section{Introduction}
+Text-to-image systems have changed the evidential status of images. Diffusion-based image synthesis has made it possible to produce convincing visual content at scale \cite{rombach}. This study is primarily motivated by Frank et al.'s finding that generated images can exhibit frequency-domain artifacts useful for deepfake recognition \cite{frank}. Corvi et al.'s diffusion-image forensics strengthens this motivation by showing that synthetic image generators can leave measurable residual fingerprints even when visual artifacts are difficult to see \cite{corvi}. Durall et al. provide the spectral-distribution premise: generated images may deviate from the frequency statistics of natural images \cite{durall}. The present work focuses on heterogeneous artwork images whose texture, resolution, compression history, and visual style vary widely across samples.
+
+This study therefore asks whether principles from frequency-domain deepfake recognition, diffusion-image forensics, and modern visual representation learning can be combined for AI-generated artwork detection. Artwork images differ from object-recognition benchmarks in resolution, composition, texture, color palette, compression history, and semantic style. The central question is therefore:
+
+\begin{quote}
+Under a validation-based comparison using the same data, visual embedding, classifier families, threshold-selection procedure, and final test set, does adding Fourier/DCT/residual frequency evidence improve AI-art detection over visual embeddings alone?
+\end{quote}
+
+\section{Related Literature}
+This study integrates three central frequency-forensic works. Frank et al. provide the main methodological foundation because they transform images into frequency representations and train classifiers, including CNNs, on transformed coefficients for deepfake recognition \cite{frank}. This motivates the direct CNN input architecture tested in the present study: an RGB image branch is compared with a DCT frequency-image branch and a dual-input RGB+DCT CNN.
+
+Corvi et al. provide the forensic-analysis foundation for diffusion imagery \cite{corvi}. Their work uses residual and Fourier-domain inspection to show that synthetic images can contain artificial fingerprints that are not obvious in the original image. In this project, that idea motivates the feature-derivation figures and the use of compact Fourier and residual descriptors.
+
+Durall et al. provide the spectral-distribution premise \cite{durall}. Their study shows that generated images may fail to reproduce the spectral statistics of natural images. This supports using Fourier radial energy and spectral slope as measurements of how image energy is distributed from low to high spatial frequencies. Rombach et al. are included because latent diffusion is a major image-synthesis paradigm behind contemporary AI imagery \cite{rombach}, while Liu et al. justify the use of ConvNeXt-Tiny as the pretrained visual representation branch \cite{convnext}.
+
+The classifier and fusion choices are also grounded in prior work rather than treated as arbitrary model options. Snoek et al. motivate the distinction between early and late fusion, which is central to comparing direct RGB+DCT CNN input against late visual-plus-frequency fusion \cite{snoek}. Cortes and Vapnik motivate the margin-based RBF SVM classifier \cite{cortes}; Rumelhart et al. motivate the multilayer perceptron classifier trained by back-propagation \cite{rumelhart}; and Geurts et al. motivate the Extremely Randomized Trees classifier used as a non-neural ensemble baseline \cite{geurts}. These references define the methodological roles of the final classifier families rather than merely naming algorithms.
+
+The present study therefore compares two designs: direct CNN learning from image/frequency inputs, and late fusion where a CNN image embedding is combined with explicit frequency descriptors before the final classifier.
+
+\section{Dataset}
+The study uses the local AI-art dataset stored at \texttt{Project/aivsrealart}. The dataset contains 973 artwork images: 434 real artworks and 539 AI-generated artworks. The collection is heterogeneous: images vary in width, height, file type, color distribution, compression, source pipeline, and content.
+
+\inplacefigure{fig:balance}{0.78\linewidth}{../figures/dataset_class_balance.png}{Class balance of the local AI-art dataset: 434 real artworks and 539 AI-generated artworks, for a total of 973 images.}
+
+\section{Methodology}
+\inplacefigure{fig:directarchitecture}{\linewidth}{../figures/direct_cnn_architecture_diagram.png}{Direct CNN architecture used to test whether frequency information should enter the network as an image-like input. The experiment compares an RGB image CNN, a DCT frequency-image CNN, and a dual-input RGB+DCT CNN whose learned vectors are joined before the final classifier.}
+
+\inplacefigure{fig:latearchitecture}{\linewidth}{../figures/study_architecture_diagram.png}{Late-fusion architecture used for the selected model. A ConvNeXt-Tiny branch extracts a visual embedding, while a compact Fourier/DCT/residual forensic branch extracts Fourier radial bands, spectral slope, DCT band energies, and high-pass residual statistics. The vectors are concatenated, classified by complementary models, and fused as weighted probabilities. In this protocol, thresholds and fusion weights are selected on validation data before final test evaluation.}
+
+\subsection{Frequency-Representation Analysis}
+The first architecture follows Frank et al.'s principle directly: frequency representations are supplied to a CNN classifier \cite{frank}. Each artwork is represented both as an RGB image and as a DCT frequency image. The tested direct CNN variants are RGB-only, DCT-only, and dual-input RGB+DCT.
+
+The second architecture uses frequency analysis as an explicit descriptor branch. Let \(I(x,y)\) denote the grayscale intensity of an artwork at spatial pixel coordinate \((x,y)\). The centered Fourier log-amplitude is
+\[
+A(u,v)=\log(1+|\mathcal{F}\{I(x,y)\}|).
+\]
+Here \(u\) and \(v\) are horizontal and vertical frequency coordinates, \(\mathcal{F}\{\cdot\}\) denotes the two-dimensional discrete Fourier transform, and \(A(u,v)\) is the log-amplitude value at frequency coordinate \((u,v)\). The logarithm compresses the dynamic range so that weaker high-frequency components remain visible and numerically usable.
+
+The radial Fourier descriptor averages \(A(u,v)\) over concentric frequency rings:
+\[
+r_k=\frac{1}{|\Omega_k|}\sum_{(u,v)\in\Omega_k} A(u,v),
+\]
+where \(k\) is the radial-band index, \(\Omega_k\) is the set of frequency coordinates whose distance from the spectrum center falls inside radial band \(k\), \(|\Omega_k|\) is the number of coordinates in that band, and \(r_k\) is the mean log-amplitude of the band. Eight radial bands are used. Spectral slope is estimated by fitting a line to the log-radial profile:
+\[
+s=\operatorname{slope}\left(\log(k),\log(r_k)\right).
+\]
+In this expression, \(s\) is the fitted decay rate of the radial spectrum. A more negative slope indicates a faster decline from low-frequency structure to high-frequency detail.
+
+Following Frank et al., DCT coefficients are also used as frequency evidence \cite{frank}. The two-dimensional DCT is
+\[
+\begin{aligned}
+C(p,q)=\alpha_p\alpha_q\sum_x\sum_y I(x,y)
+&\cos\frac{\pi(2x+1)p}{2N}\\
+&\cos\frac{\pi(2y+1)q}{2M}.
+\end{aligned}
+\]
+Here \(C(p,q)\) is the DCT coefficient at frequency index \((p,q)\), \(p\) and \(q\) are horizontal and vertical DCT frequency indices, \(N\) and \(M\) are the image width and height, and \(\alpha_p\) and \(\alpha_q\) are the DCT normalization constants. The descriptor stores the mean log-amplitude in low-, mid-, and high-frequency DCT regions, which are defined by the coefficient locations in \(C(p,q)\).
+
+Finally, following Corvi et al.'s residual-forensic motivation \cite{corvi}, a Gaussian high-pass residual is computed as
+\[
+R(x,y)=I(x,y)-G_{\sigma}(I)(x,y),
+\]
+where \(G_{\sigma}(I)\) is image \(I\) blurred by a Gaussian kernel with standard deviation \(\sigma\), and \(R(x,y)\) is the remaining high-pass residual at spatial coordinate \((x,y)\). After flattening the residual image into \(P\) pixel values \(R_i\), residual spread is measured as
+\[
+\mu_R=\frac{1}{P}\sum_{i=1}^{P}R_i,\qquad
+\sigma_R=\sqrt{\frac{1}{P}\sum_{i=1}^{P}(R_i-\mu_R)^2},
+\]
+where \(P\) is the number of residual pixels, \(R_i\) is the \(i\)-th flattened residual value, \(\mu_R\) is the residual mean, and \(\sigma_R\) is the residual standard deviation. Residual peakedness is measured as
+\[
+\kappa_R=\frac{\frac{1}{P}\sum_{i=1}^{P}(R_i-\mu_R)^4}{\sigma_R^4}-3,
+\]
+where \(\kappa_R\) is the residual excess kurtosis, matching the implementation convention. The final frequency descriptor is a 14-dimensional vector: eight Fourier radial-band values, one spectral-slope value, three DCT band-energy values, residual standard deviation, and residual excess kurtosis. In the discussion, these are also described as seven descriptor groups because the eight radial bands form one Fourier-radial group.
+
+\inplacefigure{fig:radial}{\linewidth}{../figures/corvi_radial_profile.png}{Radial Fourier amplitude profile for real and AI-generated artworks. The profile is interpreted as a compact feature summary rather than as a visually obvious separation between the two classes.}
+
+\subsection{Architectures Compared}
+Two architecture families are evaluated. The primary fair-comparison family uses the same ConvNeXt-Tiny visual embedding \cite{convnext}, the same fit/validation/test split, the same final classifiers, the same threshold-search procedure, and the same evaluation metrics. The only experimental difference is whether the final classifier receives the visual embedding alone or the visual embedding concatenated with the Fourier/DCT/residual descriptor. This is the main comparison used to support the claim that frequency-domain evidence improves the matched visual baseline.
+
+The secondary architecture family treats frequency information as an image-like input, consistent with Frank et al.'s CNN-on-frequency formulation \cite{frank}. This direct-CNN study compares an RGB image CNN, a DCT frequency-image CNN, and a dual-input RGB+DCT CNN. It is included to test where frequency evidence should enter the model, but it is not used as the primary proof of frequency improvement because it changes the network input structure.
+
+\subsection{Architecture Specification}
+For Architecture A, all images are resized to \(96\times96\). The RGB branch receives a \(3\times96\times96\) tensor, while the DCT branch receives a \(1\times96\times96\) grayscale DCT frequency image. Each branch is a compact CNN made of three convolutional stages. Every stage contains two \(3\times3\) convolution layers with padding 1 and no bias, each followed by batch normalization and ReLU activation, then a \(2\times2\) max-pooling layer. The RGB branch uses channel widths \(32\rightarrow64\rightarrow128\). The DCT branch uses channel widths \(24\rightarrow48\rightarrow96\). Adaptive average pooling converts the final feature maps into vectors. The RGB-only classifier receives a 128-dimensional vector, the DCT-only classifier receives a 96-dimensional vector, and the dual-input classifier receives the concatenated 224-dimensional vector. The classifier head is Linear\((d,128)\), ReLU, Dropout\((0.35)\), and Linear\((128,2)\). The two outputs are logits for real and AI-generated classes; softmax is applied only for probability interpretation and thresholding.
+
+The Architecture A CNNs are trained from scratch using weighted cross-entropy, AdamW with learning rate \(3\times10^{-4}\) and weight decay \(10^{-4}\), batch size 64, cosine learning-rate scheduling, a maximum of 22 epochs, and early stopping with patience 5 based on validation behavior. For Architecture B, ConvNeXt-Tiny is loaded with pretrained ImageNet weights and its final classification layer is replaced by an identity layer, producing a 768-dimensional visual embedding. The late-fusion representation is either this 768-dimensional embedding alone, the 14-dimensional Fourier/DCT/residual descriptor alone, or their 782-dimensional concatenation. The final classifiers are: RBF SVM with standardization, \(C=3.0\), \(\gamma=\) scale, probability calibration enabled, and balanced class weights; MLP with standardization, hidden layers \((160,64)\), ReLU activation, \(L_2\) penalty \(\alpha=0.0005\), and maximum 600 iterations; and ExtraTrees with 500 trees, balanced class weights, and \(\sqrt{d}\) feature sampling. Weighted probability fusion is computed as a convex combination of the three classifier AI probabilities, with the weights and decision threshold selected on the validation set only.
+
+\subsection{Frequency Feature Inspection}
+The following feature-inspection plots visualize the actual reduced descriptor used by the final model. The plots are not single-feature classifiers. Their purpose is to show the measurable Fourier-domain, DCT-domain, and residual-forensic evidence before it is fused with the ConvNeXt-Tiny image embedding. The real and AI examples then show the same transformations as image-level derivations of the descriptor.
+
+\inplacefigure{fig:featfft}{\linewidth}{../figures/feature_inspection_fourier_radial_bands.png}{Fourier radial energy bands for real and AI-generated artworks. The bins progress from low spatial frequency to high spatial frequency and summarize how log-amplitude energy is distributed across the spectrum.}
+
+\inplacefigure{fig:featslope}{0.82\linewidth}{../figures/feature_inspection_spectral_slope.png}{Spectral slope distribution. This feature summarizes the decay rate from low-frequency structure to high-frequency detail.}
+
+\inplacefigure{fig:featdct}{\linewidth}{../figures/feature_inspection_dct_bands.png}{DCT low-, mid-, and high-frequency band energy. These bands follow Frank et al.'s use of transformed frequency coefficients as classifier evidence.}
+
+\inplacefigure{fig:featres}{\linewidth}{../figures/feature_inspection_residual_descriptors.png}{Gaussian high-pass residual descriptors. Residual standard deviation measures detail spread, while residual kurtosis measures whether residual detail is concentrated in unusually strong local deviations.}
+
+\inplacefigure{fig:realexplicitfeatures}{\linewidth}{../figures/feature_derivation_real_example.png}{\textbf{Real artwork example.} Explicit derivation of the seven frequency-domain descriptor groups from one RGB image: Fourier radial bands, spectral slope, DCT low-frequency energy, DCT mid-frequency energy, DCT high-frequency energy, residual standard deviation, and residual kurtosis. The model stores these groups as a 14-dimensional vector because the Fourier radial group contains eight band values.}
+
+\inplacefigure{fig:aiexplicitfeatures}{\linewidth}{../figures/feature_derivation_ai_example.png}{\textbf{AI-generated artwork example.} The same RGB-to-descriptor derivation is shown for an AI-generated artwork so that the feature extraction process is visually comparable across classes.}
+
+
+
+\subsection{Controlled Fair-Comparison Design}
+To avoid overstating the contribution of frequency evidence, the principal experiment uses a matched validation-based design. The original stratified training partition is divided into 621 fitting images and 108 validation images. The final 244-image test partition is not used for threshold or fusion-weight selection. In the baseline condition, each image is represented only by its ConvNeXt-Tiny visual embedding. In the frequency-augmented condition, the same embedding is concatenated with the Fourier/DCT/residual descriptor. Both conditions use the same fitting images, same validation images, same final test images, same final classifier families, same threshold-selection rule, and same metrics. The tested final classifiers are radial-basis-function support vector machine \cite{cortes}, multilayer perceptron \cite{rumelhart}, and Extremely Randomized Trees \cite{geurts}. A weighted probability fusion over these classifier probabilities is also evaluated, with weights and thresholds selected on validation data only. Under this design, a test-set improvement from the augmented condition is less vulnerable to test-set tuning than a protocol that selects operating points directly on the test set.
+
+\subsection{Classifier Design}
+The experiment compares four levels of evidence. First, descriptor-only classification uses the reduced Fourier/DCT/residual forensic descriptor. Second, the matched visual-only condition uses ConvNeXt-Tiny embeddings with the same final classifiers as the augmented condition. Third, the matched visual-plus-frequency condition concatenates ConvNeXt-Tiny embeddings \cite{convnext} with the Fourier/DCT/residual descriptor and applies the same final classifiers. Fourth, the direct CNN input study evaluates compact RGB, DCT, and RGB+DCT CNNs trained from scratch to test Frank et al.'s frequency-input idea \cite{frank}. For all thresholded results, thresholds are selected on validation data and then applied to the final test set.
+
+
+\section{Results}
+The local split uses all available images through stratified partitioning. The fitting set contains 621 images: 277 real artworks and 344 AI-generated artworks. The validation set contains 108 images: 48 real artworks and 60 AI-generated artworks. The final test set contains 244 images: 109 real artworks and 135 AI-generated artworks. The results are presented in the same order as the methodology. Architecture A is discussed first because it is the direct CNN input experiment, where DCT is introduced early as a CNN input. Architecture B is discussed second because it introduces Fourier/DCT/residual evidence late, after ConvNeXt-Tiny visual embedding extraction.
+
+\subsection{Architecture A: Direct CNN Input Results}
+Architecture A evaluates Frank et al.'s frequency-input premise in a controlled scratch-CNN setting. The same split is used for three compact CNN variants: an RGB image CNN, a DCT frequency-image CNN, and a dual-input RGB+DCT CNN. Each model is trained from scratch using the fitting partition, early-stopped using validation behavior, assigned an operating threshold on validation data, and evaluated once on the final test set.
+
+\begin{center}
+\refstepcounter{table}\label{tab:directcnn}
+\small \textbf{Table \thetable.} Architecture A direct CNN input ablation with validation-selected thresholds.
+
+\scriptsize
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{p{0.50\linewidth}cccc}
+\hline
+Model design & Acc. & F1 & AUC & Threshold\\
+\hline
+DCT frequency-image CNN only & .5779 & .6709 & .5893 & .56\\
+RGB image CNN only & .6721 & .7351 & .7488 & .32\\
+Dual-input RGB image CNN plus DCT frequency-image CNN & .7049 & .7662 & .7516 & .32\\
+\hline
+\end{tabular}
+}
+\end{center}
+
+\inplacefigure{fig:directcnn}{0.90\linewidth}{../figures/architecture_a_validation_controlled_comparison.png}{Architecture A direct CNN input comparison under validation-selected thresholding. DCT is introduced early as an image-like CNN input. The graph reports final test accuracy for DCT-only, RGB-only, and dual-input RGB+DCT CNN variants trained from scratch on the same fit/validation/test split.}
+
+Table~\ref{tab:directcnn} shows that the DCT-only branch is not sufficient by itself. It reaches 57.79\% test accuracy and 58.93\% ROC-AUC, indicating that the DCT frequency image contains class-relevant signal but does not provide a complete representation of artwork authenticity. The RGB-only CNN reaches 67.21\% accuracy and 74.88\% ROC-AUC because it can learn spatial, textural, and compositional visual cues directly from the image. The dual-input RGB+DCT CNN reaches 70.49\% accuracy and 76.62\% F1. This improvement over the RGB-only CNN suggests that DCT frequency information contributes complementary evidence when paired with visual content, but the gain is still limited in a scratch-CNN setting.
+
+The Architecture A result is therefore interpreted cautiously. It supports the idea that early DCT input can help a CNN, but it also shows that training a compact CNN from scratch on a small heterogeneous artwork dataset is data-limited. The DCT input is useful, but it is not enough to produce the strongest detector in this study.
+
+\subsection{Architecture B: Late-Fusion 3\(\times\)4 Comparison}
+Architecture B evaluates whether frequency-domain evidence improves detection when introduced late as an explicit descriptor. The comparison crosses three feature-input conditions with four final classifiers. The three feature-input conditions are: Fourier/DCT/residual descriptor only, ConvNeXt-Tiny visual embedding only, and ConvNeXt-Tiny visual embedding concatenated with the Fourier/DCT/residual descriptor. The four final classifiers are RBF SVM, MLP, ExtraTrees, and weighted probability fusion. Thresholds and fusion weights are selected on the validation set and then applied to the final test set.
+
+\begin{center}
+\refstepcounter{table}\label{tab:fair}
+\small \textbf{Table \thetable.} Architecture B validation-based 3\(\times\)4 comparison: feature input type by final classifier.
+
+\scriptsize
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{p{0.42\linewidth}lccccc}
+\hline
+Feature input to final classifier & Classifier & Acc. & Prec. & Rec. & F1 & AUC\\
+\hline
+Fourier/DCT/residual descriptor only & RBF SVM & .5779 & .5741 & .9185 & .7066 & .5087\\
+Fourier/DCT/residual descriptor only & MLP & .5328 & .5544 & .7926 & .6524 & .5125\\
+Fourier/DCT/residual descriptor only & ExtraTrees & .5246 & .5826 & .4963 & .5360 & .5345\\
+Fourier/DCT/residual descriptor only & Weighted probability fusion & .5492 & .5668 & .7852 & .6584 & .5127\\
+ConvNeXt visual embedding only & RBF SVM & .8893 & .9355 & .8593 & .8958 & .9354\\
+ConvNeXt visual embedding only & MLP & .8525 & .8722 & .8593 & .8657 & .9269\\
+ConvNeXt visual embedding only & ExtraTrees & .8320 & .8852 & .8000 & .8405 & .9031\\
+ConvNeXt visual embedding only & Weighted probability fusion & .8730 & .8714 & .9037 & .8873 & .9325\\
+ConvNeXt visual embedding + Fourier/DCT/residual descriptor & RBF SVM & .8852 & .9280 & .8593 & .8923 & .9344\\
+ConvNeXt visual embedding + Fourier/DCT/residual descriptor & MLP & .8689 & .8815 & .8815 & .8815 & .9233\\
+ConvNeXt visual embedding + Fourier/DCT/residual descriptor & ExtraTrees & .8279 & .9115 & .7630 & .8306 & .9117\\
+ConvNeXt visual embedding + Fourier/DCT/residual descriptor & Weighted probability fusion & .8893 & .8913 & .9111 & .9011 & .9343\\
+\hline
+\end{tabular}
+}
+\end{center}
+
+\inplacefigure{fig:fair}{0.96\linewidth}{../figures/architecture_b_validation_controlled_3x4.png}{Architecture B validation-based comparison. The graph reports final test accuracy after crossing three feature-input conditions with four final classifiers: Fourier/DCT/residual descriptor only, ConvNeXt visual embedding only, and ConvNeXt visual embedding plus the Fourier/DCT/residual descriptor. The frequency descriptor is introduced late by concatenating it with the ConvNeXt embedding before classification.}
+
+Table~\ref{tab:fair} provides the fair comparison. Frequency descriptors alone are weak: the best descriptor-only configuration reaches 57.79\% accuracy with RBF SVM and 54.92\% accuracy with weighted fusion. This confirms that the Fourier/DCT/residual descriptor should not be presented as a standalone detector for heterogeneous artwork images. The descriptor captures image-formation evidence, but it lacks the semantic and stylistic context learned by a visual backbone.
+
+The ConvNeXt-only condition is much stronger. Its weighted fusion reaches 87.30\% accuracy, 88.73\% F1, and 93.25\% ROC-AUC after validation-selected fusion weights and threshold. This establishes the proper baseline for asking whether frequency features improve detection. When the Fourier/DCT/residual descriptor is added late to the same ConvNeXt embedding, weighted probability fusion reaches 88.93\% accuracy, 90.11\% F1, and 93.43\% ROC-AUC. The improvement is 1.64 percentage points in accuracy and 1.38 percentage points in F1 over the matched visual-only weighted-fusion baseline. Because thresholds and fusion weights are selected on validation data rather than on test labels, this provides a more defensible single-split estimate than selecting operating points directly on the test set.
+
+The classifier-level behavior is also informative. RBF SVM is strongest for the ConvNeXt-only condition by accuracy and ROC-AUC, while MLP improves in accuracy and F1 when the frequency descriptor is added. ExtraTrees becomes more conservative in the visual-plus-frequency condition: precision rises, but recall falls. Weighted probability fusion gives the selected operating balance because it combines the complementary decision behavior of the three classifiers and produces the highest F1 score among the reported visual-plus-frequency results.
+
+\subsection{Selected Late-Fusion Model and Diagnostic Figures}
+Table~\ref{tab:results} reports the selected visual-plus-frequency late-fusion breakdown under the validation-based protocol. It focuses on the visual-plus-frequency condition because that is the selected Architecture B setting after the fair comparison.
+
+\begin{center}
+\refstepcounter{table}\label{tab:results}
+\small \textbf{Table \thetable.} Visual-plus-frequency late-fusion classifier breakdown with validation-selected operating points.
+
+\scriptsize
+\begin{tabular}{lccccc}
+\hline
+Method & Acc. & Prec. & Rec. & F1 & AUC\\
+\hline
+Weighted late fusion & .8893 & .8913 & .9111 & .9011 & .9343\\
+RBF SVM late fusion & .8852 & .9280 & .8593 & .8923 & .9344\\
+MLP late fusion & .8689 & .8815 & .8815 & .8815 & .9233\\
+ExtraTrees late fusion & .8279 & .9115 & .7630 & .8306 & .9117\\
+\hline
+\end{tabular}
+\end{center}
+
+The selected weighted late-fusion model reaches 88.93\% accuracy, 89.13\% precision, 91.11\% recall, 90.11\% F1, and 93.43\% ROC-AUC at validation-selected threshold 0.48 with validation-selected fusion weights 0.10 for RBF SVM, 0.15 for MLP, and 0.75 for ExtraTrees. Precision and recall show the thresholded behavior, while ROC-AUC shows ranking quality independent of that threshold. The diagnostic figures below are regenerated from this validation-selected model.
+
+\inplacefigure{fig:cm}{0.88\linewidth}{../figures/validation_controlled_confusion_matrix.png}{Confusion matrix for the selected visual-plus-frequency weighted fusion model at validation-selected threshold 0.48. The matrix shows the thresholded real-versus-AI decisions on the final test set.}
+
+\inplacefigure{fig:roc}{\linewidth}{../figures/validation_controlled_roc_curve.png}{ROC curve of the selected visual-plus-frequency weighted fusion model. The curve evaluates ranking quality across thresholds; the reported ROC-AUC is 93.43\%.}
+
+\inplacefigure{fig:threshold}{\linewidth}{../figures/validation_controlled_threshold_sweep.png}{Test-set accuracy and F1 behavior across thresholds. The operating threshold used for the final reported model is selected from validation data, so this plot is reported only as a diagnostic view of threshold sensitivity.}
+
+\section{Discussion}
+The results support three main interpretations. First, Architecture A shows that early DCT frequency input can help a scratch CNN under validation-selected thresholding. The dual-input RGB+DCT CNN improves over RGB-only CNN in both accuracy and F1. This aligns with Frank et al.'s position that frequency representations can carry generated-image evidence. However, the modest magnitude of the gain suggests that a compact CNN trained from scratch is not the most data-efficient way to exploit frequency evidence on this dataset.
+
+Second, Architecture B shows that frequency evidence is more useful when introduced late as explicit forensic information. The 3\(\times\)4 grid is the strongest evidence because it compares feature-input conditions under the same final classifier families and uses validation rather than test labels for operating-point selection. Frequency-only results are weak, visual-only results are strong, and visual-plus-frequency results are strongest under weighted fusion. This pattern indicates that Fourier/DCT/residual descriptors are complementary rather than independently sufficient.
+
+Third, the tables show why reporting only the best model would be incomplete. Table~\ref{tab:directcnn} explains what happens when DCT is used as early CNN input. Table~\ref{tab:fair} isolates the effect of late frequency fusion across feature inputs and classifiers. Table~\ref{tab:results} gives the detailed breakdown of the selected visual-plus-frequency late-fusion condition. Taken together, the tables support a precise but limited claim: frequency-domain evidence improves the matched ConvNeXt visual baseline in this single fit-validation-test split, but frequency descriptors alone are not reliable enough for this artwork dataset.
+
+The frequency-domain figures also require careful interpretation. A single Fourier or DCT image is not treated as visual proof that one artwork is real or AI-generated. Instead, Fourier radial energy, spectral slope, DCT band energy, and high-pass residual statistics provide measured evidence that becomes useful when combined with learned visual representation. The result should therefore be framed as controlled evidence for complementary fusion, not as a universal statement that any frequency transform can detect AI art.
+
+\section{Conclusion}
+This study presents a validation-based frequency-representation architecture comparison for AI-generated artwork detection. Frank et al. motivate direct frequency input to CNN classifiers \cite{frank}; Corvi et al. motivate residual and Fourier forensic inspection for diffusion-generated images \cite{corvi}; and Durall et al. motivate spectral-distribution analysis \cite{durall}. The main comparison holds the dataset, ConvNeXt-Tiny embedding, classifier family, validation-based threshold search, and final test set constant. Under that design, weighted visual-only fusion reaches 87.30\% test accuracy, while weighted visual-plus-frequency fusion reaches 88.93\%. This supports the conclusion that Fourier/DCT/residual forensic evidence improves the visual baseline in this dataset under a single fit-validation-test split.
+
+The main limitation is dataset scale and evaluation breadth. The result is promising for the local dataset, but a stronger publication claim would require repeated splits with confidence intervals, generator-held-out testing, compression robustness, and external art datasets. The most defensible contribution at this stage is not a universal detector; it is a controlled and interpretable spectral fingerprint fusion design showing that Fourier-domain evidence, DCT energy, residual texture, and pretrained visual representations can be combined for heterogeneous AI-art imagery.
+
+\begin{thebibliography}{10}
+\bibitem{rombach} R. Rombach et al., ``High-Resolution Image Synthesis with Latent Diffusion Models,'' CVPR, 2022.
+\bibitem{corvi} R. Corvi et al., ``On the Detection of Synthetic Images Generated by Diffusion Models,'' arXiv:2211.00680, 2022.
+\bibitem{convnext} Z. Liu et al., ``A ConvNet for the 2020s,'' CVPR, 2022.
+\bibitem{frank} J. Frank et al., ``Leveraging Frequency Analysis for Deep Fake Image Recognition,'' ICML, 2020.
+\bibitem{durall} R. Durall, M. Keuper, F.-J. Pfreundt, and J. Keuper, ``Watch Your Up-Convolution: CNN Based Generative Deep Neural Networks Are Failing to Reproduce Spectral Distributions,'' CVPR, 2020.
+\bibitem{snoek} C. G. M. Snoek, M. Worring, and A. W. M. Smeulders, ``Early versus Late Fusion in Semantic Video Analysis,'' ACM Multimedia, 2005.
+\bibitem{cortes} C. Cortes and V. Vapnik, ``Support-Vector Networks,'' Machine Learning, 1995.
+\bibitem{rumelhart} D. E. Rumelhart, G. E. Hinton, and R. J. Williams, ``Learning Representations by Back-Propagating Errors,'' Nature, 1986.
+\bibitem{geurts} P. Geurts, D. Ernst, and L. Wehenkel, ``Extremely Randomized Trees,'' Machine Learning, 2006.
+\end{thebibliography}
+
+\end{document}
+
+
+
+
+
+
+
+

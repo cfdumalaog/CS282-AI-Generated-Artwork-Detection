@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+*.env
+*.key
+*.pem
+*.p12
+data/
+datasets/
+archive/
+archive_*/
+*.zip
+models/*.joblib
+models/*.pt
+models/*.npz
+
